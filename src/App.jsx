@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 
-const PROXY_URL = "http://localhost:3001/api/faculty";
+const PROXY_URL = "https://proxy.geargrid.live/api/faculty";
 
 const GRADE_POINTS = {
   "A+": 4.0,
