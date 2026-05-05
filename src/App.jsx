@@ -194,7 +194,6 @@ const App = () => {
               type="password"
               placeholder="Password"
               style={styles.blackInput}
-              required
             />
             <button disabled={loading} style={styles.blackBtn}>
               {loading ? "Verifying..." : "Sign In"}
