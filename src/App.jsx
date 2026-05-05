@@ -23,8 +23,6 @@ const styles = {
     padding: 0,
     color: theme.textMain,
   },
-
-  // Login
   loginWrapper: {
     display: "flex",
     justifyContent: "center",
@@ -80,8 +78,6 @@ const styles = {
     transition: "background 0.2s",
     boxShadow: "0 4px 6px rgba(14, 165, 233, 0.2)",
   },
-
-  // Dashboard Layout
   navbar: {
     backgroundColor: theme.white,
     padding: "16px 40px",
@@ -117,7 +113,6 @@ const styles = {
     fontWeight: "600",
     fontSize: "14px",
   },
-
   mainLayout: {
     display: "flex",
     maxWidth: "1300px",
@@ -146,8 +141,6 @@ const styles = {
     minHeight: "600px",
     position: "relative",
   },
-
-  // Profile & Data
   sectionTitle: {
     margin: "0 0 24px 0",
     color: theme.textMain,
@@ -172,8 +165,6 @@ const styles = {
     marginBottom: "4px",
   },
   profileValue: { fontWeight: "700", color: theme.textMain, fontSize: "16px" },
-
-  // Table
   tableWrapper: {
     overflowX: "auto",
     borderRadius: "12px",
@@ -200,7 +191,6 @@ const styles = {
     borderBottom: `1px solid ${theme.border}`,
     color: "#334155",
   },
-
   summaryContainer: {
     display: "grid",
     gridTemplateColumns: "repeat(3, 1fr)",
@@ -227,7 +217,6 @@ const styles = {
 // ==========================================
 const SidebarButton = ({ active, children, onClick }) => {
   const [hover, setHover] = useState(false);
-
   const btnStyle = {
     display: "block",
     width: "100%",
@@ -243,7 +232,6 @@ const SidebarButton = ({ active, children, onClick }) => {
     color: active ? "#2563eb" : "#475569",
     fontWeight: active ? "700" : "500",
   };
-
   return (
     <button
       style={btnStyle}
@@ -257,6 +245,141 @@ const SidebarButton = ({ active, children, onClick }) => {
 };
 
 // ==========================================
+// MOCK MIDDLEWARE (Simulates your Backend API)
+// ==========================================
+const simulateBackendLogin = async (username, password) => {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      // 1. If it's the exact user from your HTML, return the real scraped data
+      if (username.toUpperCase() === "IM/2020/090") {
+        resolve({
+          profile: {
+            nameWithInitial: "Mr H.T.V. FERNANDO",
+            fullName: "Mr HETTIYAKANDAGE THEEKSHANA VIMUKTHI FERNANDO",
+            studentId: "IM/2020/090",
+            academicYear: "2020/2021",
+          },
+          actions: [
+            { id: "FirstYearResultBT", label: "Registration - Year 1" },
+            { id: "SecondYearResultBT", label: "Registration - Year 2" },
+            { id: "ThirdYearResultBT", label: "Registration - Year 3" },
+            { id: "FourthYearResultBT", label: "Registration - Year 4" },
+          ],
+          records: {
+            FirstYearResultBT: {
+              title: "Year 1 Results",
+              courses: [
+                {
+                  code: "ACLT 11013",
+                  name: "ACADEMIC LITERACY I",
+                  acYear: "2020/2021",
+                  attempt: "1",
+                  status: "",
+                  grade: "C",
+                },
+                {
+                  code: "INTE 11213",
+                  name: "FUNDAMENTALS OF COMPUTING",
+                  acYear: "2020/2021",
+                  attempt: "1",
+                  status: "",
+                  grade: "A",
+                },
+                {
+                  code: "INTE 12232",
+                  name: "COMPUTER NETWORK I",
+                  acYear: "2020/2021",
+                  attempt: "1",
+                  status: "Absent",
+                  grade: "**",
+                },
+                {
+                  code: "INTE 12232",
+                  name: "COMPUTER NETWORK I",
+                  acYear: "2021/2022",
+                  attempt: "2",
+                  status: "Medical Approved",
+                  grade: "B+",
+                },
+              ],
+              summary: { totalCredit: 45, nonGpaCredit: 11, gpa: "3.370" },
+            },
+            SecondYearResultBT: {
+              title: "Year 2 Results",
+              courses: [
+                {
+                  code: "DELT 21222",
+                  name: "COMMUNICATION SKILLS",
+                  acYear: "2021/2022",
+                  attempt: "1",
+                  status: "",
+                  grade: "B",
+                },
+                {
+                  code: "INTE 21213",
+                  name: "INFORMATION SYSTEMS MODELLING",
+                  acYear: "2022/2023",
+                  attempt: "2",
+                  status: "Medical Approved",
+                  grade: "B+",
+                },
+              ],
+              summary: { totalCredit: 42, nonGpaCredit: 4, gpa: "2.840" },
+            },
+          },
+        });
+      }
+      // 2. If it's ANY OTHER user, dynamically generate dummy data for them
+      else if (username.length > 5) {
+        resolve({
+          profile: {
+            nameWithInitial: `Student ${username}`,
+            fullName: `Test User for ID ${username}`,
+            studentId: username.toUpperCase(),
+            academicYear: "2023/2024",
+          },
+          actions: [
+            { id: "FirstYearResultBT", label: "Registration - Year 1" },
+            { id: "SecondYearResultBT", label: "Registration - Year 2" },
+          ],
+          records: {
+            FirstYearResultBT: {
+              title: "Year 1 Results (Dynamic Test)",
+              courses: [
+                {
+                  code: "TEST 1001",
+                  name: "Dynamic Test Subject 1",
+                  acYear: "2023/2024",
+                  attempt: "1",
+                  status: "",
+                  grade: "A+",
+                },
+                {
+                  code: "TEST 1002",
+                  name: "Dynamic Test Subject 2",
+                  acYear: "2023/2024",
+                  attempt: "1",
+                  status: "",
+                  grade: "A-",
+                },
+              ],
+              summary: { totalCredit: 30, nonGpaCredit: 0, gpa: "3.950" },
+            },
+            SecondYearResultBT: {
+              title: "Year 2 Results (Dynamic Test)",
+              courses: [], // Empty to test the "No Data" UI
+              summary: null,
+            },
+          },
+        });
+      } else {
+        reject("Invalid format. Please enter a valid University ID.");
+      }
+    }, 1000);
+  });
+};
+
+// ==========================================
 // 1. LOGIN SCREEN COMPONENT
 // ==========================================
 const LoginScreen = ({ onLoginSuccess }) => {
@@ -265,24 +388,19 @@ const LoginScreen = ({ onLoginSuccess }) => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
-    setTimeout(() => {
-      if (studentId === "IM/2020/090") {
-        onLoginSuccess({
-          nameWithInitial: "Mr H.T.V. FERNANDO",
-          fullName: "Mr HETTIYAKANDAGE THEEKSHANA VIMUKTHI FERNANDO",
-          studentId: "IM/2020/090",
-          academicYear: "2020/2021",
-        });
-      } else {
-        setError("Invalid credentials. Please use IM/2020/090");
-        setLoading(false);
-      }
-    }, 800);
+    try {
+      // In production, this will be: await fetch('http://your-backend/api/login', {...})
+      const userData = await simulateBackendLogin(studentId, password);
+      onLoginSuccess(userData);
+    } catch (err) {
+      setError(err);
+      setLoading(false);
+    }
   };
 
   return (
@@ -295,7 +413,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
           {error && (
             <div
               style={{
-                ...styles.errorMsg,
                 backgroundColor: "#fef2f2",
                 color: "#b91c1c",
                 padding: "12px",
@@ -326,7 +443,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
               required
               value={studentId}
               onChange={(e) => setStudentId(e.target.value)}
-              placeholder="IM/2020/090"
+              placeholder="e.g. IM/2020/090 or CS/2022/100"
             />
 
             <label
@@ -353,7 +470,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
               type="submit"
               style={{ ...styles.btnPrimary, opacity: loading ? 0.7 : 1 }}
             >
-              {loading ? "Authenticating..." : "Secure Login"}
+              {loading ? "Authenticating & Fetching..." : "Secure Login"}
             </button>
           </form>
         </div>
@@ -366,7 +483,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
 // 2. DATA TABLE COMPONENT
 // ==========================================
 const ResultsTable = ({ title, data }) => {
-  if (!data || !data.courses)
+  if (!data || !data.courses || data.courses.length === 0)
     return (
       <div>
         <h2 style={styles.sectionTitle}>{title}</h2>
@@ -628,597 +745,19 @@ const ResultsTable = ({ title, data }) => {
 // ==========================================
 // 3. STUDENT DASHBOARD COMPONENT
 // ==========================================
-const StudentDashboard = ({ profile, onLogout }) => {
+const StudentDashboard = ({ userData, onLogout }) => {
   const [activeView, setActiveView] = useState("profile");
   const [isLoading, setIsLoading] = useState(false);
 
-  const actions = [
-    { id: "FirstYearResultBT", label: "Registration - Year 1" },
-    { id: "SecondYearResultBT", label: "Registration - Year 2" },
-    { id: "ThirdYearResultBT", label: "Registration - Year 3" },
-    { id: "FourthYearResultBT", label: "Registration - Year 4" },
-    { id: "Std_AdmissionBT", label: "Exam Admission" },
-    { id: "Std_RepeatRegistrationBT", label: "Registration - Repeat" },
-  ];
-
-  // ALL RAW DATA FROM YOUR HTML FILES (Years 1, 2, 3, and 4)
-  const database = {
-    FirstYearResultBT: {
-      title: "Year 1 Results",
-      courses: [
-        {
-          code: "ACLT 11013",
-          name: "ACADEMIC LITERACY I",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "C",
-        },
-        {
-          code: "ACLT 12022",
-          name: "ACADEMIC LITERACY II",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "CMSK 14042",
-          name: "INTRODUCTION TO COMPUTER HARDWARE...",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "Incomplete",
-          grade: "--",
-        },
-        {
-          code: "CMSK 14042",
-          name: "INTRODUCTION TO COMPUTER HARDWARE...",
-          acYear: "2023/2024",
-          attempt: "2",
-          status: "",
-          grade: "Complete",
-        },
-        {
-          code: "DELT 11232",
-          name: "ENGLISH FOR PROFESSIONALS",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "B+",
-        },
-        {
-          code: "GNCT 11212",
-          name: "PERSONAL PROGRESS DEVELOPMENT I",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "Pass",
-        },
-        {
-          code: "GNCT 12212",
-          name: "PROBLEM SOLVING AND CRITICAL THINKING",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "Pass",
-        },
-        {
-          code: "INTE 11213",
-          name: "FUNDAMENTALS OF COMPUTING",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "INTE 11223",
-          name: "PROGRAMMING CONCEPTS",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "INTE 12213",
-          name: "OBJECT ORIENTED PROGRAMMING",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "B-",
-        },
-        {
-          code: "INTE 12223",
-          name: "DATABASE DESIGN AND DEVELOPMENT",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "C+",
-        },
-        {
-          code: "INTE 12232",
-          name: "COMPUTER NETWORK I",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "INTE 12232",
-          name: "COMPUTER NETWORK I",
-          acYear: "2021/2022",
-          attempt: "2",
-          status: "Medical Approved",
-          grade: "B+",
-        },
-        {
-          code: "MGTE 11202",
-          name: "ECONOMICS",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "MGTE 11213",
-          name: "STATISTICS",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "MGTE 11222",
-          name: "PRINCIPLES OF MANAGEMENT",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "MGTE 12222",
-          name: "OPTIMIZATION METHODS IN MANAGEMENT...",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "MGTE 12232",
-          name: "INDUSTRY AND TECHNOLOGY",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "MGTE 12253",
-          name: "ACCOUNTING CONCEPTS AND COSTING",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "MGTE 12253",
-          name: "ACCOUNTING CONCEPTS AND COSTING",
-          acYear: "2022/2023",
-          attempt: "2",
-          status: "Medical Approved",
-          grade: "A",
-        },
-        {
-          code: "PMAT 11212",
-          name: "MATHEMATICS FOR COMPUTING I",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "PMAT 11212",
-          name: "MATHEMATICS FOR COMPUTING I",
-          acYear: "2021/2022",
-          attempt: "2",
-          status: "Medical Approved",
-          grade: "B-",
-        },
-        {
-          code: "PMAT 12212",
-          name: "MATHEMATICS FOR COMPUTING II",
-          acYear: "2020/2021",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "PMAT 12212",
-          name: "MATHEMATICS FOR COMPUTING II",
-          acYear: "2021/2022",
-          attempt: "2",
-          status: "Medical Approved",
-          grade: "B",
-        },
-      ],
-      summary: { totalCredit: 45, nonGpaCredit: 11, gpa: "3.370000" },
-    },
-    SecondYearResultBT: {
-      title: "Year 2 Results",
-      courses: [
-        {
-          code: "DELT 21222",
-          name: "COMMUNICATION SKILLS FOR PROFESSIONALS",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "GNCT 21212",
-          name: "PERSONAL PROGRESS DEVELOPMENT II",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "Pass",
-        },
-        {
-          code: "GNCT 22212",
-          name: "TECHNICAL WRITING",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "A-",
-        },
-        {
-          code: "INTE 21213",
-          name: "INFORMATION SYSTEMS MODELLING",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "INTE 21213",
-          name: "INFORMATION SYSTEMS MODELLING",
-          acYear: "2022/2023",
-          attempt: "2",
-          status: "Medical Approved",
-          grade: "B+",
-        },
-        {
-          code: "INTE 21233",
-          name: "WEB APPLICATION DEVELOPMENT I",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "INTE 21233",
-          name: "WEB APPLICATION DEVELOPMENT I",
-          acYear: "2023/2024",
-          attempt: "2",
-          status: "",
-          grade: "C",
-        },
-        {
-          code: "INTE 21243",
-          name: "COMPUTER ARCHITECTURE AND OPERATING...",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "A-",
-        },
-        {
-          code: "INTE 21263",
-          name: "DATA STRUCTURES AND ALGORITHMS",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "C",
-        },
-        {
-          code: "INTE 21273",
-          name: "DATA SCIENCE",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "INTE 21273",
-          name: "DATA SCIENCE",
-          acYear: "2022/2023",
-          attempt: "2",
-          status: "Medical Approved",
-          grade: "B",
-        },
-        {
-          code: "INTE 21292",
-          name: "INFORMATION SECURITY I",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "INTE 21292",
-          name: "INFORMATION SECURITY I",
-          acYear: "2023/2024",
-          attempt: "2",
-          status: "",
-          grade: "C",
-        },
-        {
-          code: "INTE 22212",
-          name: "SOFTWARE DESIGN PATTERNS AND FRAMEWORKS",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "C",
-        },
-        {
-          code: "INTE 22242",
-          name: "WEB APPLICATIONS DEVELOPMENT II",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "INTE 22253",
-          name: "DISTRIBUTED SYSTEMS AND CLOUD COMPUTING",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "INTE 22283",
-          name: "MOBILE APPLICATIONS DEVELOPMENT",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "A+",
-        },
-        {
-          code: "INTE 22293",
-          name: "SOFTWARE ARCHITECTURE AND PROCESS MODELS",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "B+",
-        },
-        {
-          code: "INTE 22303",
-          name: "ARTIFICIAL INTELLIGENCE",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "INTE 22303",
-          name: "ARTIFICIAL INTELLIGENCE",
-          acYear: "2022/2023",
-          attempt: "2",
-          status: "Medical Approved",
-          grade: "C+",
-        },
-        {
-          code: "INTE 22313",
-          name: "INTERACTIVE APPLICATIONS DEVELOPMENT",
-          acYear: "2021/2022",
-          attempt: "1",
-          status: "",
-          grade: "B-",
-        },
-      ],
-      summary: { totalCredit: 42, nonGpaCredit: 4, gpa: "2.840000" },
-    },
-    ThirdYearResultBT: {
-      title: "Year 3 Results",
-      courses: [
-        {
-          code: "GNCT 32216",
-          name: "INTERNSHIP",
-          acYear: "2022/2023",
-          attempt: "1",
-          status: "",
-          grade: "A+",
-        },
-        {
-          code: "INTE 31213",
-          name: "ADVANCED DATABASES",
-          acYear: "2022/2023",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "INTE 31213",
-          name: "ADVANCED DATABASES",
-          acYear: "2023/2024",
-          attempt: "2",
-          status: "Medical Approved",
-          grade: "C+",
-        },
-        {
-          code: "INTE 31233",
-          name: "HUMAN COMPUTER INTERACTION",
-          acYear: "2022/2023",
-          attempt: "1",
-          status: "",
-          grade: "B-",
-        },
-        {
-          code: "INTE 31243",
-          name: "SOFTWARE QUALITY ENGINEERING",
-          acYear: "2022/2023",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "INTE 31273",
-          name: "SYSTEM INTEGRATION TECHNOLOGIES - 1",
-          acYear: "2022/2023",
-          attempt: "1",
-          status: "Absent",
-          grade: "**",
-        },
-        {
-          code: "INTE 31273",
-          name: "SYSTEM INTEGRATION TECHNOLOGIES - 1",
-          acYear: "2023/2024",
-          attempt: "2",
-          status: "Medical Approved",
-          grade: "B-",
-        },
-        {
-          code: "INTE 31356",
-          name: "SOFTWARE DEVELOPMENT PROJECT",
-          acYear: "2022/2023",
-          attempt: "1",
-          status: "",
-          grade: "A-",
-        },
-        {
-          code: "INTE 31382",
-          name: "SYSTEM ADMINISTRATION AND MAINTENANCE",
-          acYear: "2022/2023",
-          attempt: "1",
-          status: "",
-          grade: "B-",
-        },
-        {
-          code: "MGTE 31212",
-          name: "PROJECT MANAGEMENT",
-          acYear: "2022/2023",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "MGTE 31222",
-          name: "RESEARCH METHODS",
-          acYear: "2022/2023",
-          attempt: "1",
-          status: "",
-          grade: "B-",
-        },
-      ],
-      summary: { totalCredit: 30, nonGpaCredit: "", gpa: "3.170000" },
-    },
-    FourthYearResultBT: {
-      title: "Year 4 Results",
-      courses: [
-        {
-          code: "INTE 41292",
-          name: "MOBILE COMPUTING",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "INTE 41302",
-          name: "GEOGRAPHICAL INFORMATION SYSTEMS",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "INTE 41323",
-          name: "NEURAL NETWORKS AND DEEP LEARNING",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "INTE 41342",
-          name: "INDUSTRIAL AUTOMATION",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "B-",
-        },
-        {
-          code: "INTE 41352",
-          name: "SYSTEM INTEGRATION TECHNOLOGIES - 2",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "INTE 42232",
-          name: "DATA ENGINEERING",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "INTE 42252",
-          name: "SEMANTIC WEB AND ONTOLOGICAL ENGINEERING",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "A-",
-        },
-        {
-          code: "INTE 43216",
-          name: "RESEARCH PROJECT",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-        {
-          code: "INTE 44363",
-          name: "",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "",
-        },
-        {
-          code: "MGTE 41212",
-          name: "PROFESSIONAL PRACTICES",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "B",
-        },
-        {
-          code: "MGTE 41222",
-          name: "BUSINESS PROCESS ENGINEERING",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "C+",
-        },
-        {
-          code: "MGTE 44273",
-          name: "INNOVATION & ENTREPRENEURSHIP",
-          acYear: "2023/2024",
-          attempt: "1",
-          status: "",
-          grade: "A",
-        },
-      ],
-      summary: { totalCredit: 31, nonGpaCredit: "", gpa: "3.240000" },
-    },
-  };
+  // The specific records for the user currently logged in
+  const userRecords = userData.records;
 
   const handleNavClick = (id) => {
     setIsLoading(true);
     setTimeout(() => {
       setActiveView(id);
       setIsLoading(false);
-    }, 400); // simulate network fetch
+    }, 300); // Simulate network fetch for tabs
   };
 
   return (
@@ -1262,7 +801,7 @@ const StudentDashboard = ({ profile, onLogout }) => {
             Academic Records
           </p>
 
-          {actions.map((action) => (
+          {userData.actions.map((action) => (
             <SidebarButton
               key={action.id}
               active={activeView === action.id}
@@ -1308,26 +847,29 @@ const StudentDashboard = ({ profile, onLogout }) => {
           {!isLoading && activeView === "profile" && (
             <div>
               <h2 style={styles.sectionTitle}>Personal Information</h2>
-
               <div style={styles.profileGrid}>
                 <div style={styles.profileBox}>
                   <div style={styles.profileLabel}>Name with Initials</div>
                   <div style={styles.profileValue}>
-                    {profile.nameWithInitial}
+                    {userData.profile.nameWithInitial}
                   </div>
                 </div>
                 <div style={styles.profileBox}>
                   <div style={styles.profileLabel}>University ID No</div>
-                  <div style={styles.profileValue}>{profile.studentId}</div>
+                  <div style={styles.profileValue}>
+                    {userData.profile.studentId}
+                  </div>
                 </div>
                 <div style={{ ...styles.profileBox, gridColumn: "1 / -1" }}>
                   <div style={styles.profileLabel}>Full Name</div>
-                  <div style={styles.profileValue}>{profile.fullName}</div>
+                  <div style={styles.profileValue}>
+                    {userData.profile.fullName}
+                  </div>
                 </div>
                 <div style={styles.profileBox}>
                   <div style={styles.profileLabel}>Academic Year</div>
                   <div style={{ ...styles.profileValue, color: theme.primary }}>
-                    {profile.academicYear}
+                    {userData.profile.academicYear}
                   </div>
                 </div>
               </div>
@@ -1337,9 +879,10 @@ const StudentDashboard = ({ profile, onLogout }) => {
           {!isLoading && activeView !== "profile" && (
             <ResultsTable
               title={
-                actions.find((a) => a.id === activeView)?.label + " Results"
+                userData.actions.find((a) => a.id === activeView)?.label +
+                " Results"
               }
-              data={database[activeView]}
+              data={userRecords[activeView]}
             />
           )}
         </div>
@@ -1352,16 +895,16 @@ const StudentDashboard = ({ profile, onLogout }) => {
 // MAIN APP CONTROLLER
 // ==========================================
 export default function App() {
-  const [studentProfile, setStudentProfile] = useState(null);
+  const [currentUserData, setCurrentUserData] = useState(null);
 
   return (
     <>
-      {!studentProfile ? (
-        <LoginScreen onLoginSuccess={setStudentProfile} />
+      {!currentUserData ? (
+        <LoginScreen onLoginSuccess={setCurrentUserData} />
       ) : (
         <StudentDashboard
-          profile={studentProfile}
-          onLogout={() => setStudentProfile(null)}
+          userData={currentUserData}
+          onLogout={() => setCurrentUserData(null)}
         />
       )}
     </>
