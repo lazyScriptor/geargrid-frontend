@@ -21,10 +21,9 @@ const App = () => {
   const [sessionUrl, setSessionUrl] = useState("/sfkn.aspx");
   const [tokens, setTokens] = useState(null);
   const [student, setStudent] = useState(null);
-  const [credentials, setCredentials] = useState(null); // Temporarily hold for auto-recovery
+  const [credentials, setCredentials] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // Hydration & UI State
   const [hydrationProgress, setHydrationProgress] = useState(0);
   const [cachedHtml, setCachedHtml] = useState({});
   const [gpaData, setGpaData] = useState({});
@@ -67,40 +66,77 @@ const App = () => {
     return nextTokens;
   };
 
+  // --- ADVANCED GPA SCRAPER ---
   const calculateYearlyGPA = (panelNode, yearId) => {
     const rows = panelNode.querySelectorAll("tr");
     let pts = 0,
       crd = 0;
+
     rows.forEach((row) => {
       const cells = Array.from(row.querySelectorAll("td")).map((c) =>
         c.innerText.trim(),
       );
-      const grade = cells.find((t) => GRADE_POINTS.hasOwnProperty(t));
-      const credit = cells.find((t) => /^[1-4](\.0)?$/.test(t));
-      if (grade && credit) {
-        pts += GRADE_POINTS[grade] * parseFloat(credit);
-        crd += parseFloat(credit);
+      if (cells.length < 2) return;
+
+      // 1. Scan backwards to find the grade (Grades are usually at the end)
+      const reversedCells = [...cells].reverse();
+      const grade = reversedCells.find((t) => GRADE_POINTS.hasOwnProperty(t));
+
+      // 2. Identify the Credit Value safely
+      let credit = 0;
+
+      // Strategy A: Look for Kelaniya Subject Code format (e.g., IMAT 11212)
+      // The 5th digit of the number part is usually the credit value.
+      const codeCell = cells.find((t) => /^[A-Z]{4}\s*\d{5}$/i.test(t));
+      if (codeCell) {
+        const digits = codeCell.match(/\d{5}/)[0];
+        credit = parseInt(digits.charAt(4)); // Gets the 5th digit
+      }
+
+      // Strategy B: If no Subject Code found, look for a standalone number from right-to-left
+      // This prevents grabbing the "1" or "2" from the Serial Number column.
+      if (credit === 0 || isNaN(credit)) {
+        const creditStr = reversedCells.find((t) => /^[1-8](\.0)?$/.test(t));
+        credit = parseFloat(creditStr);
+      }
+
+      // Calculate if data is valid
+      if (grade && !isNaN(credit) && credit > 0) {
+        pts += GRADE_POINTS[grade] * credit;
+        crd += credit;
       }
     });
-    if (crd > 0)
+
+    if (crd > 0) {
       setGpaData((prev) => ({
         ...prev,
-        [yearId]: { gpa: (pts / crd).toFixed(2), credits: crd },
+        [yearId]: {
+          points: pts, // Storing raw points eliminates rounding errors in Cumulative GPA
+          credits: crd,
+          gpa: (pts / crd).toFixed(2),
+        },
       }));
+    }
   };
+
+  const cumulativeGPA = useMemo(() => {
+    const vals = Object.values(gpaData);
+    if (vals.length === 0) return "0.00";
+
+    // Sum raw points directly to avoid cumulative rounding errors
+    const totalPts = vals.reduce((a, c) => a + c.points, 0);
+    const totalCrd = vals.reduce((a, c) => a + c.credits, 0);
+
+    return totalCrd === 0 ? "0.00" : (totalPts / totalCrd).toFixed(2);
+  }, [gpaData]);
 
   // --- SELF-HEALING ENGINE ---
   const silentReAuthenticate = async () => {
-    console.log(
-      "🛠️ Session corrupted. Executing silent background re-authentication...",
-    );
-    // 1. Get fresh initial tokens
     const initRes = await fetch(`${PROXY_URL}/sfkn.aspx`);
     const initHtml = await initRes.text();
     const parser = new DOMParser();
     const initDoc = parser.parseFromString(initHtml, "text/html");
 
-    // 2. Login dynamically
     const body = new URLSearchParams();
     body.append(
       "__VIEWSTATE",
@@ -115,7 +151,7 @@ const App = () => {
       initDoc.getElementById("__EVENTVALIDATION")?.value || "",
     );
     body.append("Usernametxt", credentials.uid);
-    body.append("PasswordTxt", credentials.pwd);
+    body.append("PasswordTxt", credentials.pwd); // Will pass empty string if optional
     body.append("LoginBT", "Sign in");
 
     const loginRes = await fetch(`${PROXY_URL}/sfkn.aspx`, {
@@ -128,8 +164,6 @@ const App = () => {
     const finalUrl =
       loginRes.headers.get("X-Final-Url") ||
       loginRes.headers.get("X-Final-URL");
-
-    // 3. Return the fresh, uncorrupted tokens
     return parseAndCache(loginHtml, finalUrl);
   };
 
@@ -162,24 +196,18 @@ const App = () => {
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
           });
 
-          if (!res.ok) throw new Error("500 Bad Gateway / Timeout");
+          if (!res.ok) throw new Error("500 Bad Gateway");
           const html = await res.text();
 
           if (html.includes("Error") || html.length < 1000)
-            throw new Error("ASP.NET ViewState Invalid");
+            throw new Error("Invalid ViewState");
 
           const finalUrlHeader =
             res.headers.get("X-Final-Url") || res.headers.get("X-Final-URL");
           currentTokens = parseAndCache(html, finalUrlHeader, target);
           success = true;
         } catch (err) {
-          console.warn(
-            `⚠️ Attempt ${attempts}/3 failed for ${target}. Retrying...`,
-          );
-          if (attempts === 2) {
-            // If standard retries fail, the session is dead. Force a silent hard-reset.
-            currentTokens = await silentReAuthenticate();
-          }
+          if (attempts === 2) currentTokens = await silentReAuthenticate();
         }
       }
       setHydrationProgress(i + 1);
@@ -206,8 +234,10 @@ const App = () => {
     e.preventDefault();
     setLoading(true);
     const fd = new FormData(e.target);
-    const currentCreds = { uid: fd.get("uid"), pwd: fd.get("pwd") };
-    setCredentials(currentCreds); // Save for background healing
+
+    // Optional password support (falls back to empty string if undefined)
+    const currentCreds = { uid: fd.get("uid"), pwd: fd.get("pwd") || "" };
+    setCredentials(currentCreds);
 
     const body = new URLSearchParams();
     body.append("__VIEWSTATE", tokens.viewState);
@@ -237,14 +267,6 @@ const App = () => {
       setLoading(false);
     }
   };
-
-  const cumulativeGPA = useMemo(() => {
-    const vals = Object.values(gpaData);
-    if (vals.length === 0) return "0.00";
-    const pts = vals.reduce((a, c) => a + parseFloat(c.gpa) * c.credits, 0);
-    const crd = vals.reduce((a, c) => a + c.credits, 0);
-    return (pts / crd).toFixed(2);
-  }, [gpaData]);
 
   // --- INJECT RESPONSIVE CSS ---
   useEffect(() => {
@@ -287,6 +309,7 @@ const App = () => {
           justifyContent: "center",
           alignItems: "center",
           fontWeight: "bold",
+          color: "#000",
         }}
       >
         Connecting to Server...
@@ -322,6 +345,7 @@ const App = () => {
             Enter university credentials
           </p>
           <form onSubmit={handleLogin}>
+            {/* Explicitly set backgroundColor and color to prevent dark-mode invisible text issues */}
             <input
               name="uid"
               placeholder="ID (IM/2020/090)"
@@ -333,13 +357,16 @@ const App = () => {
                 borderRadius: "6px",
                 fontWeight: "bold",
                 boxSizing: "border-box",
+                backgroundColor: "#fff",
+                color: "#000",
               }}
               required
             />
+            {/* Removed 'required' attribute here to allow password-less logins */}
             <input
               name="pwd"
               type="password"
-              placeholder="Password"
+              placeholder="Password (Optional)"
               style={{
                 width: "100%",
                 padding: "14px",
@@ -348,8 +375,9 @@ const App = () => {
                 borderRadius: "6px",
                 fontWeight: "bold",
                 boxSizing: "border-box",
+                backgroundColor: "#fff",
+                color: "#000",
               }}
-              required
             />
             <button
               disabled={loading}
@@ -374,7 +402,6 @@ const App = () => {
 
   return (
     <div className="app-container">
-      {/* Mobile Overlay */}
       <div
         className={`overlay ${isMobileMenuOpen ? "open" : ""}`}
         onClick={() => setIsMobileMenuOpen(false)}
@@ -510,7 +537,6 @@ const App = () => {
       </aside>
 
       <main className="main-content">
-        {/* Mobile Header */}
         <header className="header-mobile">
           <button
             className="menu-btn"
@@ -518,12 +544,11 @@ const App = () => {
           >
             ☰
           </button>
-          <div style={{ fontWeight: "900", fontSize: "18px" }}>
+          <div style={{ fontWeight: "900", fontSize: "18px", color: "#000" }}>
             {activeTab.replace("ResultBT", "")}
           </div>
         </header>
 
-        {/* Desktop Top Bar */}
         <header
           className="top-bar"
           style={{
@@ -536,7 +561,7 @@ const App = () => {
         >
           <div
             className="desktop-header-title"
-            style={{ fontWeight: "900", fontSize: "20px" }}
+            style={{ fontWeight: "900", fontSize: "20px", color: "#000" }}
           >
             {activeTab.replace("ResultBT", "")}
           </div>
@@ -549,7 +574,9 @@ const App = () => {
             }}
           >
             <div className="profile-info">
-              <div style={{ fontWeight: "900", fontSize: "15px" }}>
+              <div
+                style={{ fontWeight: "900", fontSize: "15px", color: "#000" }}
+              >
                 {student.shortName}
               </div>
               <div
@@ -577,7 +604,7 @@ const App = () => {
           </div>
         </header>
 
-        <div style={{ padding: "20px" }}>
+        <div style={{ padding: "20px", color: "#000" }}>
           {activeTab === "GPA" ? (
             <div style={{ textAlign: "center" }}>
               <h1 style={{ fontWeight: "900", margin: "10px 0" }}>
