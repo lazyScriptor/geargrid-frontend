@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 
-const PROXY_URL = "https://proxy.geargrid.live/api/faculty";
+const PROXY_URL = "https://proxy.geargrid.live/api/faculty"; // Your secure Vercel-ready endpoint
 
 const GRADE_POINTS = {
   "A+": 4.0,
@@ -21,30 +21,34 @@ const App = () => {
   const [sessionUrl, setSessionUrl] = useState("/sfkn.aspx");
   const [tokens, setTokens] = useState(null);
   const [student, setStudent] = useState(null);
+  const [credentials, setCredentials] = useState(null); // Temporarily hold for auto-recovery
   const [loading, setLoading] = useState(false);
-  const [hydrationProgress, setHydrationProgress] = useState(0);
 
-  // Data Cache
-  const [cachedHtml, setCachedHtml] = useState({}); // { Year1ResultBT: "<html>..." }
+  // Hydration & UI State
+  const [hydrationProgress, setHydrationProgress] = useState(0);
+  const [cachedHtml, setCachedHtml] = useState({});
   const [gpaData, setGpaData] = useState({});
   const [activeTab, setActiveTab] = useState("Dashboard");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Helper: Scrape data from ASP.NET response
+  // --- CORE SCRAPER ---
   const parseAndCache = (htmlText, finalUrl, targetId = null) => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlText, "text/html");
 
-    if (finalUrl) setSessionUrl(new URL(finalUrl).pathname);
+    if (finalUrl) {
+      try {
+        setSessionUrl(new URL(finalUrl).pathname);
+      } catch (e) {}
+    }
 
-    // Update tokens for the NEXT request
     const nextTokens = {
-      viewState: doc.getElementById("__VIEWSTATE")?.value,
-      generator: doc.getElementById("__VIEWSTATEGENERATOR")?.value,
-      validation: doc.getElementById("__EVENTVALIDATION")?.value,
+      viewState: doc.getElementById("__VIEWSTATE")?.value || "",
+      generator: doc.getElementById("__VIEWSTATEGENERATOR")?.value || "",
+      validation: doc.getElementById("__EVENTVALIDATION")?.value || "",
     };
     setTokens(nextTokens);
 
-    // Profile Mapping
     const nameWithInitial = doc.getElementById("NameWithInitialLb")?.innerText;
     if (nameWithInitial && nameWithInitial !== "N/A") {
       setStudent({
@@ -55,7 +59,6 @@ const App = () => {
       });
     }
 
-    // Content & GPA Scraping
     const middlePanel = doc.getElementById("Panel_Middle");
     if (middlePanel && targetId) {
       setCachedHtml((prev) => ({ ...prev, [targetId]: middlePanel.innerHTML }));
@@ -86,8 +89,51 @@ const App = () => {
       }));
   };
 
-  // Pre-load all data sequentially to prevent session collisions
-  const hydrateAllYears = async (initialTokens) => {
+  // --- SELF-HEALING ENGINE ---
+  const silentReAuthenticate = async () => {
+    console.log(
+      "🛠️ Session corrupted. Executing silent background re-authentication...",
+    );
+    // 1. Get fresh initial tokens
+    const initRes = await fetch(`${PROXY_URL}/sfkn.aspx`);
+    const initHtml = await initRes.text();
+    const parser = new DOMParser();
+    const initDoc = parser.parseFromString(initHtml, "text/html");
+
+    // 2. Login dynamically
+    const body = new URLSearchParams();
+    body.append(
+      "__VIEWSTATE",
+      initDoc.getElementById("__VIEWSTATE")?.value || "",
+    );
+    body.append(
+      "__VIEWSTATEGENERATOR",
+      initDoc.getElementById("__VIEWSTATEGENERATOR")?.value || "",
+    );
+    body.append(
+      "__EVENTVALIDATION",
+      initDoc.getElementById("__EVENTVALIDATION")?.value || "",
+    );
+    body.append("Usernametxt", credentials.uid);
+    body.append("PasswordTxt", credentials.pwd);
+    body.append("LoginBT", "Sign in");
+
+    const loginRes = await fetch(`${PROXY_URL}/sfkn.aspx`, {
+      method: "POST",
+      body,
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    });
+
+    const loginHtml = await loginRes.text();
+    const finalUrl =
+      loginRes.headers.get("X-Final-Url") ||
+      loginRes.headers.get("X-Final-URL");
+
+    // 3. Return the fresh, uncorrupted tokens
+    return parseAndCache(loginHtml, finalUrl);
+  };
+
+  const hydrateAllYears = async (initialTokens, creds) => {
     const years = [
       "FirstYearResultBT",
       "SecondYearResultBT",
@@ -97,39 +143,61 @@ const App = () => {
     let currentTokens = initialTokens;
 
     for (let i = 0; i < years.length; i++) {
-      setHydrationProgress(i + 1);
       const target = years[i];
+      let success = false;
+      let attempts = 0;
 
-      const body = new URLSearchParams();
-      body.append("__EVENTTARGET", target);
-      body.append("__VIEWSTATE", currentTokens.viewState);
-      body.append("__VIEWSTATEGENERATOR", currentTokens.generator);
-      body.append("__EVENTVALIDATION", currentTokens.validation);
+      while (!success && attempts < 3) {
+        attempts++;
+        try {
+          const body = new URLSearchParams();
+          body.append("__EVENTTARGET", target);
+          body.append("__VIEWSTATE", currentTokens.viewState);
+          body.append("__VIEWSTATEGENERATOR", currentTokens.generator);
+          body.append("__EVENTVALIDATION", currentTokens.validation);
 
-      try {
-        const res = await fetch(`${PROXY_URL}${sessionUrl}`, {
-          method: "POST",
-          body: body,
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        });
-        const html = await res.text();
-        currentTokens = parseAndCache(
-          html,
-          res.headers.get("X-Final-URL"),
-          target,
-        );
-      } catch (err) {
-        console.error(`Failed to cache ${target}`, err);
+          const res = await fetch(`${PROXY_URL}${sessionUrl}`, {
+            method: "POST",
+            body,
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          });
+
+          if (!res.ok) throw new Error("500 Bad Gateway / Timeout");
+          const html = await res.text();
+
+          if (html.includes("Error") || html.length < 1000)
+            throw new Error("ASP.NET ViewState Invalid");
+
+          const finalUrlHeader =
+            res.headers.get("X-Final-Url") || res.headers.get("X-Final-URL");
+          currentTokens = parseAndCache(html, finalUrlHeader, target);
+          success = true;
+        } catch (err) {
+          console.warn(
+            `⚠️ Attempt ${attempts}/3 failed for ${target}. Retrying...`,
+          );
+          if (attempts === 2) {
+            // If standard retries fail, the session is dead. Force a silent hard-reset.
+            currentTokens = await silentReAuthenticate();
+          }
+        }
       }
+      setHydrationProgress(i + 1);
     }
-    setHydrationProgress(100);
   };
 
+  // --- INITIALIZATION & AUTH ---
   useEffect(() => {
     const init = async () => {
-      const res = await fetch(`${PROXY_URL}/sfkn.aspx`);
-      const html = await res.text();
-      parseAndCache(html, res.headers.get("X-Final-URL"));
+      try {
+        const res = await fetch(`${PROXY_URL}/sfkn.aspx`);
+        const html = await res.text();
+        const finalUrlHeader =
+          res.headers.get("X-Final-Url") || res.headers.get("X-Final-URL");
+        parseAndCache(html, finalUrlHeader);
+      } catch (err) {
+        setTokens({ viewState: "", generator: "", validation: "" });
+      }
     };
     init();
   }, []);
@@ -138,25 +206,31 @@ const App = () => {
     e.preventDefault();
     setLoading(true);
     const fd = new FormData(e.target);
+    const currentCreds = { uid: fd.get("uid"), pwd: fd.get("pwd") };
+    setCredentials(currentCreds); // Save for background healing
+
     const body = new URLSearchParams();
     body.append("__VIEWSTATE", tokens.viewState);
     body.append("__VIEWSTATEGENERATOR", tokens.generator);
     body.append("__EVENTVALIDATION", tokens.validation);
-    body.append("Usernametxt", fd.get("uid"));
-    body.append("PasswordTxt", fd.get("pwd"));
+    body.append("Usernametxt", currentCreds.uid);
+    body.append("PasswordTxt", currentCreds.pwd);
     body.append("LoginBT", "Sign in");
 
     try {
       const res = await fetch(`${PROXY_URL}${sessionUrl}`, {
         method: "POST",
-        body: body,
+        body,
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
       const html = await res.text();
-      const newTokens = parseAndCache(html, res.headers.get("X-Final-URL"));
+      const finalUrlHeader =
+        res.headers.get("X-Final-Url") || res.headers.get("X-Final-URL");
+      const newTokens = parseAndCache(html, finalUrlHeader);
 
-      // Start Background Hydration
-      if (html.includes("NameWithInitialLb")) hydrateAllYears(newTokens);
+      if (html.includes("NameWithInitialLb"))
+        hydrateAllYears(newTokens, currentCreds);
+      else alert("Invalid Credentials or System Offline");
     } catch (err) {
       alert("Login Error: Server Unreachable");
     } finally {
@@ -172,31 +246,126 @@ const App = () => {
     return (pts / crd).toFixed(2);
   }, [gpaData]);
 
+  // --- INJECT RESPONSIVE CSS ---
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.innerHTML = `
+      body, html { margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; background: #fff; }
+      .app-container { display: flex; height: 100vh; width: 100vw; background: #fff; color: #000; }
+      .sidebar { width: 260px; background: #000; color: #fff; display: flex; flex-direction: column; transition: transform 0.3s ease; z-index: 1000; }
+      .main-content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; width: 100%; position: relative; }
+      .header-mobile { display: none; padding: 15px 20px; border-bottom: 2px solid #000; align-items: center; justify-content: space-between; }
+      .menu-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #000; padding: 0; }
+      .gpa-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+      .overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999; }
+      table { width: 100% !important; border-collapse: collapse; }
+      td, th { border: 1px solid #000; padding: 8px; text-align: left; }
+      .table-wrapper { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+      
+      @media (max-width: 768px) {
+        .sidebar { position: fixed; height: 100vh; transform: translateX(-100%); }
+        .sidebar.open { transform: translateX(0); }
+        .header-mobile { display: flex; }
+        .desktop-header-title { display: none; }
+        .top-bar { padding: 10px 15px; }
+        .gpa-grid { grid-template-columns: 1fr; }
+        .overlay.open { display: block; }
+        .profile-info { text-align: right; }
+        .auth-card { width: 90% !important; padding: 25px !important; }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
+
   if (!tokens)
     return (
-      <div style={styles.fullCenter}>Initializing Secure Connection...</div>
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          fontWeight: "bold",
+        }}
+      >
+        Connecting to Server...
+      </div>
     );
 
   if (!student)
     return (
-      <div style={styles.authBg}>
-        <div style={styles.loginCard}>
-          <h2 style={styles.blackText}>Faculty Portal</h2>
+      <div
+        style={{
+          height: "100vh",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          background: "#f5f5f5",
+        }}
+      >
+        <div
+          className="auth-card"
+          style={{
+            background: "#fff",
+            padding: "40px",
+            borderRadius: "12px",
+            width: "350px",
+            border: "3px solid #000",
+            boxShadow: "8px 8px 0px #000",
+          }}
+        >
+          <h2 style={{ margin: "0 0 5px 0", color: "#000", fontWeight: "900" }}>
+            FIS Portal
+          </h2>
+          <p style={{ margin: "0 0 20px 0", fontSize: "14px", color: "#000" }}>
+            Enter university credentials
+          </p>
           <form onSubmit={handleLogin}>
             <input
               name="uid"
               placeholder="ID (IM/2020/090)"
-              style={styles.blackInput}
+              style={{
+                width: "100%",
+                padding: "14px",
+                margin: "10px 0",
+                border: "2px solid #000",
+                borderRadius: "6px",
+                fontWeight: "bold",
+                boxSizing: "border-box",
+              }}
               required
             />
             <input
               name="pwd"
               type="password"
               placeholder="Password"
-              style={styles.blackInput}
+              style={{
+                width: "100%",
+                padding: "14px",
+                margin: "10px 0 20px",
+                border: "2px solid #000",
+                borderRadius: "6px",
+                fontWeight: "bold",
+                boxSizing: "border-box",
+              }}
+              required
             />
-            <button disabled={loading} style={styles.blackBtn}>
-              {loading ? "Verifying..." : "Sign In"}
+            <button
+              disabled={loading}
+              style={{
+                width: "100%",
+                padding: "14px",
+                background: "#000",
+                color: "#fff",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: "900",
+                fontSize: "16px",
+              }}
+            >
+              {loading ? "Verifying..." : "Login"}
             </button>
           </form>
         </div>
@@ -204,11 +373,51 @@ const App = () => {
     );
 
   return (
-    <div style={styles.dashboard}>
-      <aside style={styles.sidebar}>
-        <div style={styles.sidebarHeader}>FIS v2.0</div>
-        <nav style={styles.nav}>
-          <div style={styles.navGroup}>Academic Records</div>
+    <div className="app-container">
+      {/* Mobile Overlay */}
+      <div
+        className={`overlay ${isMobileMenuOpen ? "open" : ""}`}
+        onClick={() => setIsMobileMenuOpen(false)}
+      ></div>
+
+      <aside className={`sidebar ${isMobileMenuOpen ? "open" : ""}`}>
+        <div
+          style={{
+            padding: "25px 20px",
+            fontSize: "22px",
+            fontWeight: "900",
+            borderBottom: "1px solid #333",
+            display: "flex",
+            justifyContent: "space-between",
+          }}
+        >
+          <span>FIS v2.0</span>
+          {isMobileMenuOpen && (
+            <button
+              style={{
+                background: "none",
+                border: "none",
+                color: "#fff",
+                fontSize: "20px",
+              }}
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        <nav style={{ flex: 1, padding: "10px" }}>
+          <div
+            style={{
+              fontSize: "11px",
+              color: "#888",
+              textTransform: "uppercase",
+              padding: "20px 10px 10px",
+              fontWeight: "bold",
+            }}
+          >
+            Academic Records
+          </div>
           {[
             "FirstYearResultBT",
             "SecondYearResultBT",
@@ -217,235 +426,259 @@ const App = () => {
           ].map((id, i) => (
             <button
               key={id}
-              onClick={() => setActiveTab(id)}
-              style={styles.navBtn}
+              onClick={() => {
+                setActiveTab(id);
+                setIsMobileMenuOpen(false);
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "14px",
+                background: activeTab === id ? "#222" : "none",
+                border: "none",
+                color: "#fff",
+                textAlign: "left",
+                cursor: "pointer",
+                fontWeight: "bold",
+                borderRadius: "6px",
+              }}
             >
               Year {i + 1} {cachedHtml[id] ? "✅" : "⏳"}
             </button>
           ))}
-          <div style={styles.navGroup}>Analytics</div>
-          <button onClick={() => setActiveTab("GPA")} style={styles.navBtn}>
-            📊 Final GPA
+          <div
+            style={{
+              fontSize: "11px",
+              color: "#888",
+              textTransform: "uppercase",
+              padding: "20px 10px 10px",
+              fontWeight: "bold",
+            }}
+          >
+            Analytics
+          </div>
+          <button
+            onClick={() => {
+              setActiveTab("GPA");
+              setIsMobileMenuOpen(false);
+            }}
+            style={{
+              display: "block",
+              width: "100%",
+              padding: "14px",
+              background: activeTab === "GPA" ? "#222" : "none",
+              border: "none",
+              color: "#fff",
+              textAlign: "left",
+              cursor: "pointer",
+              fontWeight: "bold",
+              borderRadius: "6px",
+            }}
+          >
+            📊 GPA Overview
           </button>
           <button
             onClick={() => window.location.reload()}
-            style={styles.logoutBtn}
+            style={{
+              marginTop: "30px",
+              width: "100%",
+              padding: "12px",
+              background: "#ff4757",
+              color: "#fff",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
           >
-            Logout
+            Secure Logout
           </button>
         </nav>
-        {hydrationProgress > 0 && hydrationProgress < 100 && (
-          <div style={styles.progress}>
-            Caching: {hydrationProgress}/4 years
+        {hydrationProgress > 0 && hydrationProgress < 4 && (
+          <div
+            style={{
+              padding: "15px",
+              fontSize: "12px",
+              textAlign: "center",
+              background: "#111",
+              fontWeight: "bold",
+            }}
+          >
+            Syncing Database: {hydrationProgress}/4
           </div>
         )}
       </aside>
 
-      <main style={styles.main}>
-        <header style={styles.topBar}>
-          <div style={styles.blackText}>
-            <b>{activeTab.replace("ResultBT", "")}</b>
-          </div>
-          <div style={styles.profileInfo}>
-            <div style={{ textAlign: "right" }}>
-              <div style={styles.blackText}>
-                <b>{student.shortName}</b>
-              </div>
-              <div style={styles.blackText}>
-                <small>{student.id}</small>
-              </div>
-            </div>
-            <div style={styles.avatar}>{student.shortName.charAt(3)}</div>
+      <main className="main-content">
+        {/* Mobile Header */}
+        <header className="header-mobile">
+          <button
+            className="menu-btn"
+            onClick={() => setIsMobileMenuOpen(true)}
+          >
+            ☰
+          </button>
+          <div style={{ fontWeight: "900", fontSize: "18px" }}>
+            {activeTab.replace("ResultBT", "")}
           </div>
         </header>
 
-        <div style={styles.contentContainer}>
+        {/* Desktop Top Bar */}
+        <header
+          className="top-bar"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "15px 30px",
+            borderBottom: "2px solid #000",
+          }}
+        >
+          <div
+            className="desktop-header-title"
+            style={{ fontWeight: "900", fontSize: "20px" }}
+          >
+            {activeTab.replace("ResultBT", "")}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "15px",
+              marginLeft: "auto",
+            }}
+          >
+            <div className="profile-info">
+              <div style={{ fontWeight: "900", fontSize: "15px" }}>
+                {student.shortName}
+              </div>
+              <div
+                style={{ fontSize: "12px", fontWeight: "bold", color: "#555" }}
+              >
+                {student.id}
+              </div>
+            </div>
+            <div
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "50%",
+                background: "#000",
+                color: "#fff",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                fontWeight: "bold",
+                fontSize: "18px",
+              }}
+            >
+              {student.shortName.charAt(3)}
+            </div>
+          </div>
+        </header>
+
+        <div style={{ padding: "20px" }}>
           {activeTab === "GPA" ? (
-            <div style={styles.gpaContainer}>
-              <h1 style={styles.blackText}>Cumulative GPA</h1>
-              <div style={styles.gpaHero}>{cumulativeGPA}</div>
-              <div style={styles.gpaGrid}>
+            <div style={{ textAlign: "center" }}>
+              <h1 style={{ fontWeight: "900", margin: "10px 0" }}>
+                Cumulative GPA
+              </h1>
+              <div
+                style={{
+                  fontSize: "64px",
+                  fontWeight: "900",
+                  background: "#000",
+                  color: "#fff",
+                  padding: "30px",
+                  borderRadius: "12px",
+                  margin: "20px 0",
+                  boxShadow: "6px 6px 0px #ccc",
+                }}
+              >
+                {cumulativeGPA}
+              </div>
+              <div className="gpa-grid">
                 {Object.entries(gpaData).map(([year, d]) => (
-                  <div key={year} style={styles.gpaCard}>
-                    <div style={styles.blackText}>
-                      <b>{year.replace("ResultBT", "")}</b>
+                  <div
+                    key={year}
+                    style={{
+                      padding: "20px",
+                      border: "3px solid #000",
+                      borderRadius: "12px",
+                      textAlign: "left",
+                      boxShadow: "4px 4px 0px #000",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: "900",
+                        fontSize: "18px",
+                        borderBottom: "2px solid #000",
+                        paddingBottom: "10px",
+                        marginBottom: "10px",
+                      }}
+                    >
+                      {year.replace("ResultBT", "")}
                     </div>
-                    <div style={{ fontSize: "20px", color: "#000" }}>
+                    <div style={{ fontSize: "28px", fontWeight: "900" }}>
                       GPA: {d.gpa}
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: "bold",
+                        color: "#666",
+                        marginTop: "5px",
+                      }}
+                    >
+                      Credits Evaluated: {d.credits}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <div style={styles.scrapedBox}>
-              <div style={styles.profileHeader}>
-                <div style={styles.blackText}>
-                  <b>Full Name:</b> {student.fullName}
+            <div>
+              <div
+                style={{
+                  border: "3px solid #000",
+                  borderRadius: "8px",
+                  padding: "20px",
+                  marginBottom: "20px",
+                  boxShadow: "4px 4px 0px #000",
+                }}
+              >
+                <div style={{ fontWeight: "bold", marginBottom: "5px" }}>
+                  Student Name:{" "}
+                  <span style={{ fontWeight: "500" }}>{student.fullName}</span>
                 </div>
-                <div style={styles.blackText}>
-                  <b>Academic Year:</b> {student.year}
+                <div style={{ fontWeight: "bold" }}>
+                  Handbook Year:{" "}
+                  <span style={{ fontWeight: "500" }}>{student.year}</span>
                 </div>
               </div>
               <div
-                style={styles.htmlWrapper}
-                dangerouslySetInnerHTML={{
-                  __html:
-                    cachedHtml[activeTab] ||
-                    "Please wait, data is being cached...",
+                style={{
+                  border: "3px solid #000",
+                  borderRadius: "8px",
+                  padding: "20px",
+                  background: "#fafafa",
                 }}
-              />
+              >
+                <div
+                  className="table-wrapper"
+                  dangerouslySetInnerHTML={{
+                    __html:
+                      cachedHtml[activeTab] ||
+                      `<div style="text-align:center; padding: 40px; font-weight: bold;">Loading / Recovering Data...</div>`,
+                  }}
+                />
+              </div>
             </div>
           )}
         </div>
       </main>
     </div>
   );
-};
-
-const styles = {
-  fullCenter: {
-    height: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    background: "#fff",
-    color: "#000",
-    fontWeight: "bold",
-  },
-  authBg: {
-    height: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    background: "#000",
-  },
-  loginCard: {
-    background: "#fff",
-    padding: "40px",
-    borderRadius: "8px",
-    width: "350px",
-    textAlign: "center",
-  },
-  blackText: { color: "#000000" },
-  blackInput: {
-    width: "100%",
-    padding: "12px",
-    margin: "10px 0",
-    border: "2px solid #000",
-    borderRadius: "4px",
-    fontWeight: "bold",
-    color: "#000",
-  },
-  blackBtn: {
-    width: "100%",
-    padding: "12px",
-    background: "#000",
-    color: "#fff",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-    fontWeight: "bold",
-  },
-  dashboard: { display: "flex", height: "100vh", background: "#fff" },
-  sidebar: {
-    width: "240px",
-    background: "#000",
-    color: "#fff",
-    display: "flex",
-    flexDirection: "column",
-  },
-  sidebarHeader: {
-    padding: "20px",
-    fontSize: "20px",
-    fontWeight: "bold",
-    color: "#3498db",
-    borderBottom: "1px solid #222",
-  },
-  nav: { flex: 1, padding: "10px" },
-  navGroup: {
-    fontSize: "10px",
-    color: "#666",
-    textTransform: "uppercase",
-    padding: "15px 10px 5px",
-  },
-  navBtn: {
-    display: "block",
-    width: "100%",
-    padding: "12px",
-    background: "none",
-    border: "none",
-    color: "#fff",
-    textAlign: "left",
-    cursor: "pointer",
-    borderBottom: "1px solid #111",
-  },
-  progress: {
-    padding: "10px",
-    fontSize: "10px",
-    textAlign: "center",
-    background: "#111",
-  },
-  logoutBtn: {
-    marginTop: "30px",
-    width: "100%",
-    padding: "10px",
-    background: "#e74c3c",
-    color: "#fff",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-  },
-  main: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    overflowY: "auto",
-  },
-  topBar: {
-    padding: "15px 30px",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottom: "2px solid #000",
-  },
-  profileInfo: { display: "flex", alignItems: "center", gap: "10px" },
-  avatar: {
-    width: "35px",
-    height: "35px",
-    borderRadius: "50%",
-    background: "#000",
-    color: "#fff",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    fontWeight: "bold",
-  },
-  contentContainer: { padding: "30px" },
-  scrapedBox: {
-    border: "2px solid #000",
-    borderRadius: "8px",
-    padding: "20px",
-  },
-  profileHeader: {
-    marginBottom: "20px",
-    paddingBottom: "10px",
-    borderBottom: "1px solid #000",
-  },
-  htmlWrapper: { color: "#000000", fontWeight: "600" },
-  gpaContainer: { textAlign: "center" },
-  gpaHero: {
-    fontSize: "72px",
-    fontWeight: "900",
-    color: "#000",
-    margin: "20px 0",
-  },
-  gpaGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: "20px",
-  },
-  gpaCard: { padding: "20px", border: "2px solid #000", borderRadius: "8px" },
 };
 
 export default App;
