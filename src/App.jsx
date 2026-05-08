@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 
-const PROXY_URL = "https://proxy.geargrid.live/api/faculty"; // Your secure Vercel-ready endpoint
+const PROXY_URL = "http://localhost:3001/api/faculty";
 
 const GRADE_POINTS = {
   "A+": 4.0,
@@ -23,6 +23,7 @@ const App = () => {
   const [student, setStudent] = useState(null);
   const [credentials, setCredentials] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [sessionCookie, setSessionCookie] = useState(""); // Holds ASP.NET Session
 
   const [hydrationProgress, setHydrationProgress] = useState(0);
   const [cachedHtml, setCachedHtml] = useState({});
@@ -31,7 +32,7 @@ const App = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // --- CORE SCRAPER ---
-  const parseAndCache = (htmlText, finalUrl, targetId = null) => {
+  const parseAndCache = (htmlText, finalUrl, newCookie, targetId = null) => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlText, "text/html");
 
@@ -39,6 +40,10 @@ const App = () => {
       try {
         setSessionUrl(new URL(finalUrl).pathname);
       } catch (e) {}
+    }
+
+    if (newCookie) {
+      setSessionCookie(newCookie);
     }
 
     const nextTokens = {
@@ -78,29 +83,22 @@ const App = () => {
       );
       if (cells.length < 2) return;
 
-      // 1. Scan backwards to find the grade (Grades are usually at the end)
       const reversedCells = [...cells].reverse();
       const grade = reversedCells.find((t) => GRADE_POINTS.hasOwnProperty(t));
 
-      // 2. Identify the Credit Value safely
       let credit = 0;
-
-      // Strategy A: Look for Kelaniya Subject Code format (e.g., IMAT 11212)
-      // The 5th digit of the number part is usually the credit value.
       const codeCell = cells.find((t) => /^[A-Z]{4}\s*\d{5}$/i.test(t));
+
       if (codeCell) {
         const digits = codeCell.match(/\d{5}/)[0];
-        credit = parseInt(digits.charAt(4)); // Gets the 5th digit
+        credit = parseInt(digits.charAt(4));
       }
 
-      // Strategy B: If no Subject Code found, look for a standalone number from right-to-left
-      // This prevents grabbing the "1" or "2" from the Serial Number column.
       if (credit === 0 || isNaN(credit)) {
         const creditStr = reversedCells.find((t) => /^[1-8](\.0)?$/.test(t));
         credit = parseFloat(creditStr);
       }
 
-      // Calculate if data is valid
       if (grade && !isNaN(credit) && credit > 0) {
         pts += GRADE_POINTS[grade] * credit;
         crd += credit;
@@ -111,7 +109,7 @@ const App = () => {
       setGpaData((prev) => ({
         ...prev,
         [yearId]: {
-          points: pts, // Storing raw points eliminates rounding errors in Cumulative GPA
+          points: pts,
           credits: crd,
           gpa: (pts / crd).toFixed(2),
         },
@@ -122,17 +120,19 @@ const App = () => {
   const cumulativeGPA = useMemo(() => {
     const vals = Object.values(gpaData);
     if (vals.length === 0) return "0.00";
-
-    // Sum raw points directly to avoid cumulative rounding errors
     const totalPts = vals.reduce((a, c) => a + c.points, 0);
     const totalCrd = vals.reduce((a, c) => a + c.credits, 0);
-
     return totalCrd === 0 ? "0.00" : (totalPts / totalCrd).toFixed(2);
   }, [gpaData]);
 
   // --- SELF-HEALING ENGINE ---
   const silentReAuthenticate = async () => {
-    const initRes = await fetch(`${PROXY_URL}/sfkn.aspx`);
+    const reqHeaders = { "Content-Type": "application/x-www-form-urlencoded" };
+    if (sessionCookie) reqHeaders["X-Session-Cookie"] = sessionCookie;
+
+    const initRes = await fetch(`${PROXY_URL}/sfkn.aspx`, {
+      headers: reqHeaders,
+    });
     const initHtml = await initRes.text();
     const parser = new DOMParser();
     const initDoc = parser.parseFromString(initHtml, "text/html");
@@ -151,20 +151,22 @@ const App = () => {
       initDoc.getElementById("__EVENTVALIDATION")?.value || "",
     );
     body.append("Usernametxt", credentials.uid);
-    body.append("PasswordTxt", credentials.pwd); // Will pass empty string if optional
+    body.append("PasswordTxt", credentials.pwd);
     body.append("LoginBT", "Sign in");
 
     const loginRes = await fetch(`${PROXY_URL}/sfkn.aspx`, {
       method: "POST",
       body,
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers: reqHeaders,
     });
 
     const loginHtml = await loginRes.text();
     const finalUrl =
       loginRes.headers.get("X-Final-Url") ||
       loginRes.headers.get("X-Final-URL");
-    return parseAndCache(loginHtml, finalUrl);
+    const cookieHeader = loginRes.headers.get("X-Session-Cookie");
+
+    return parseAndCache(loginHtml, finalUrl, cookieHeader);
   };
 
   const hydrateAllYears = async (initialTokens, creds) => {
@@ -184,16 +186,27 @@ const App = () => {
       while (!success && attempts < 3) {
         attempts++;
         try {
+          const fetchUrl = sessionUrl.startsWith("/api/faculty")
+            ? `http://localhost:3001${sessionUrl}`
+            : `${PROXY_URL}${sessionUrl}`;
+
           const body = new URLSearchParams();
           body.append("__EVENTTARGET", target);
           body.append("__VIEWSTATE", currentTokens.viewState);
           body.append("__VIEWSTATEGENERATOR", currentTokens.generator);
           body.append("__EVENTVALIDATION", currentTokens.validation);
 
-          const res = await fetch(`${PROXY_URL}${sessionUrl}`, {
+          const reqHeaders = {
+            "Content-Type": "application/x-www-form-urlencoded",
+          };
+          // Note: Because state updates asynchronously in React, sessionCookie might be
+          // a tick behind during a loop. We rely on the initial login cookie to hold us over.
+          if (sessionCookie) reqHeaders["X-Session-Cookie"] = sessionCookie;
+
+          const res = await fetch(fetchUrl, {
             method: "POST",
             body,
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            headers: reqHeaders,
           });
 
           if (!res.ok) throw new Error("500 Bad Gateway");
@@ -204,7 +217,14 @@ const App = () => {
 
           const finalUrlHeader =
             res.headers.get("X-Final-Url") || res.headers.get("X-Final-URL");
-          currentTokens = parseAndCache(html, finalUrlHeader, target);
+          const cookieHeader = res.headers.get("X-Session-Cookie");
+
+          currentTokens = parseAndCache(
+            html,
+            finalUrlHeader,
+            cookieHeader,
+            target,
+          );
           success = true;
         } catch (err) {
           if (attempts === 2) currentTokens = await silentReAuthenticate();
@@ -222,7 +242,8 @@ const App = () => {
         const html = await res.text();
         const finalUrlHeader =
           res.headers.get("X-Final-Url") || res.headers.get("X-Final-URL");
-        parseAndCache(html, finalUrlHeader);
+        const cookieHeader = res.headers.get("X-Session-Cookie");
+        parseAndCache(html, finalUrlHeader, cookieHeader);
       } catch (err) {
         setTokens({ viewState: "", generator: "", validation: "" });
       }
@@ -235,7 +256,6 @@ const App = () => {
     setLoading(true);
     const fd = new FormData(e.target);
 
-    // Optional password support (falls back to empty string if undefined)
     const currentCreds = { uid: fd.get("uid"), pwd: fd.get("pwd") || "" };
     setCredentials(currentCreds);
 
@@ -247,20 +267,33 @@ const App = () => {
     body.append("PasswordTxt", currentCreds.pwd);
     body.append("LoginBT", "Sign in");
 
+    const reqHeaders = { "Content-Type": "application/x-www-form-urlencoded" };
+    if (sessionCookie) reqHeaders["X-Session-Cookie"] = sessionCookie;
+
     try {
-      const res = await fetch(`${PROXY_URL}${sessionUrl}`, {
+      const fetchUrl = sessionUrl.startsWith("/api/faculty")
+        ? `http://localhost:3001${sessionUrl}`
+        : `${PROXY_URL}${sessionUrl}`;
+
+      const res = await fetch(fetchUrl, {
         method: "POST",
         body,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: reqHeaders,
       });
+
       const html = await res.text();
       const finalUrlHeader =
         res.headers.get("X-Final-Url") || res.headers.get("X-Final-URL");
-      const newTokens = parseAndCache(html, finalUrlHeader);
+      const cookieHeader = res.headers.get("X-Session-Cookie");
 
-      if (html.includes("NameWithInitialLb"))
+      const newTokens = parseAndCache(html, finalUrlHeader, cookieHeader);
+
+      // We check if the student's name label exists on the page
+      if (html.includes("NameWithInitialLb")) {
         hydrateAllYears(newTokens, currentCreds);
-      else alert("Invalid Credentials or System Offline");
+      } else {
+        alert("Invalid Credentials or System Offline");
+      }
     } catch (err) {
       alert("Login Error: Server Unreachable");
     } finally {
@@ -345,7 +378,6 @@ const App = () => {
             Enter university credentials
           </p>
           <form onSubmit={handleLogin}>
-            {/* Explicitly set backgroundColor and color to prevent dark-mode invisible text issues */}
             <input
               name="uid"
               placeholder="ID (IM/2020/090)"
@@ -362,7 +394,6 @@ const App = () => {
               }}
               required
             />
-            {/* Removed 'required' attribute here to allow password-less logins */}
             <input
               name="pwd"
               type="password"
